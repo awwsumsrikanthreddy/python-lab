@@ -1,19 +1,67 @@
-#type1
+rock = '''
+    _______
+---'   ____)
+      (_____)
+      (_____)
+      (____)
+---.__(___)
+'''
+
+paper = '''
+    _______
+---'   ____)____
+          ______)
+          _______)
+         _______)
+---.__________)
+'''
+
+scissors = '''
+    _______
+---'   ____)____
+          ______)
+       __________)
+      (____)
+---.__(___)
+'''
+
+
 import random
-friends = ["Alice", "Bob", "Charlie", "David", "Emanuel"]
-pick = random.choice(friends)
-print(pick)
+user_input = int(input("enter 0 for rock, 1 for paper and 2 for scissors: "))
+computer_input = int(random.choice(['0','1','2']))
 
-#type2
+print("You chose:")
+if user_input == 0:
+    print (f"{rock}")
+elif user_input == 1:
+    print (f"{paper}")
+elif user_input == 2:
+    print(f"{scissors}")
+else:
+    print (f"use 0,1,2")
 
-import random
-friends = ["Alice", "Bob", "Charlie", "David", "Emanuel"]
-random_gen = random.randint(0,4)
-print(friends[random_gen])
+print("Computer chose:")
+if computer_input == 0:
+    print (f"{rock}")
+elif computer_input == 1:
+    print (f"{paper}")
+elif computer_input == 2:
+    print (f"{scissors}")
 
-#type 3
-import random
+# game logic
 
-friends = ["Alice", "Bob", "Charlie", "David", "Emanuel"]
-picks = random.choices(friends, k=3)  # Picks 3 random friends (duplicates possible)
-print(picks)
+if computer_input == user_input:
+    print("try again")
+elif user_input == 0 and computer_input == 1:
+    print(f"computer wins")
+elif user_input == 0 and computer_input == 2:
+    print (f"user wins")
+elif user_input == 1 and computer_input == 0:
+    print(f"user wins")
+elif user_input == 1 and computer_input == 2:
+    print (f"computer wins")
+elif user_input == 2 and computer_input == 0:
+    print (f"computer wins")
+elif user_input == 2 and computer_input == 1:
+    print (f"user wins")
+
