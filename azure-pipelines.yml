@@ -31,7 +31,7 @@ jobs:
     vmImage: 'ubuntu-latest'
 
   variables:
-    versionEnv: $(Build.BuildId)  # ensures local to this job too
+    versionEnv: $(Build.BuildId)
 
   steps:
     - checkout: self
@@ -54,5 +54,7 @@ jobs:
           --aqua-key $(AQUA_KEY) \
           --aqua-secret $(AQUA_SECRET) \
           --cspm-url https://eu-1.api.cloudsploit.com \
-          --artifact-path "knightfortheright:$(versionEnv)"
+          --artifact-path "your-image-name:$(versionEnv)"
+      displayName: "Install & Run Billy"
+
       displayName: "Install & Run Billy"
