@@ -1,67 +1,65 @@
 trigger: none
 
 variables:
-  versionEnv: $(Build.BuildId)  # Used for tagging images or SBOMs
+  imageName: knightfortheright/mytest
+  imageTag: $(Build.BuildId)
+  fullImageName: $(imageName):$(imageTag)
 
-# -----------------------------
-# Job 1: Aqua Scanner
-# -----------------------------
-jobs:
-- job: AquaScan
-  displayName: "Aqua Vulnerability Scan"
-  container:
-    image: aquasec/aqua-scanner
-    env:
-      AQUA_KEY: $(AQUA_KEY)
-      AQUA_SECRET: $(AQUA_SECRET)
-      AZURE_TOKEN: $(AZURE_TOKEN)
-      AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
-      CSPM_URL: https://eu-1.api.cloudsploit.com
-      TRIVY_RUN_AS_PLUGIN: aqua
+pool:
+  vmImage: 'ubuntu-latest'
 
-  steps:
-    - checkout: self
-      fetchDepth: 0
+steps:
+# 1. Checkout the code
+- checkout: self
+  fetchDepth: 0
 
-    - script: |
-        trivy fs --scanners misconfig,vuln,secret . \
-        --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-      displayName: "Run Aqua Scanner"
+# 2. Docker login (if pulling base image or pushing to registry)
+- script: |
+    echo "$(DOCKER_PASSWORD)" | docker login -u "$(DOCKER_USERNAME)" --password-stdin
+  displayName: "Docker Login"
+  env:
+    DOCKER_USERNAME: $(DOCKER_USERNAME)
+    DOCKER_PASSWORD: $(DOCKER_PASSWORD)
 
-# -----------------------------
-# Job 2: SBOM Generation
-# -----------------------------
-- job: SBOMGen
-  displayName: "SBOM Generation with Billy"
-  dependsOn: AquaScan
-  condition: succeeded()
+# 3. Build Docker image
+- script: |
+    echo "Building Docker image: $(fullImageName)"
+    docker build -t $(fullImageName) .
+  displayName: "Build Docker Image"
 
-  pool:
-    vmImage: 'ubuntu-latest'  # Required for GNU utilities like sha256sum
+# 4. Scan with Aqua Trivy
+- script: |
+    echo "Running Aqua Trivy scan..."
+    docker run --rm \
+      -e AQUA_KEY=$(AQUA_KEY) \
+      -e AQUA_SECRET=$(AQUA_SECRET) \
+      -e AQUA_URL=https://api.eu-1.supply-chain.cloud.aquasec.com \
+      -e CSPM_URL=https://eu-1.api.cloudsploit.com \
+      -e TRIVY_RUN_AS_PLUGIN=aqua \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      aquasec/aqua-scanner \
+      trivy image --scanners vuln,misconfig,secret $(fullImageName)
+  displayName: "Scan Image with Aqua"
+  env:
+    AQUA_KEY: $(AQUA_KEY)
+    AQUA_SECRET: $(AQUA_SECRET)
 
-  variables:
-    versionEnv: $(Build.BuildId)
+# 5. Install & run Billy to generate SBOM
+- script: |
+    echo "Installing Billy for SBOM..."
+    curl -sLo install.sh https://download.codesec.aquasec.com/billy/install.sh
+    curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
 
-  steps:
-    - checkout: self
+    sha256sum -c install.sh.checksum || { echo "Checksum validation failed"; exit 1; }
 
-    - script: |
-        echo "Installing Billy for SBOM generation..."
-        export BILLY_SERVER=https://billy.eu-1.codesec.aquasec.com
+    BINDIR="." sh install.sh
+    rm install.sh install.sh.checksum
 
-        curl -sLo install.sh https://download.codesec.aquasec.com/billy/install.sh
-        curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
-
-        sha256sum -c install.sh.checksum || { echo "Checksum validation failed"; exit 1; }
-
-        BINDIR="." sh install.sh
-        rm install.sh install.sh.checksum
-
-        echo "Generating SBOM..."
-        ./billy generate \
-          --access-token $(System.AccessToken) \
-          --aqua-key $(AQUA_KEY) \
-          --aqua-secret $(AQUA_SECRET) \
-          --cspm-url https://eu-1.api.cloudsploit.com \
-          --artifact-path "knightfortheright:$(versionEnv)"
-      displayName: "Install & Run Billy"
+    echo "Generating SBOM..."
+    ./billy generate \
+      --access-token $(System.AccessToken) \
+      --aqua-key $(AQUA_KEY) \
+      --aqua-secret $(AQUA_SECRET) \
+      --cspm-url https://eu-1.api.cloudsploit.com \
+      --artifact-path $(fullImageName)
+  displayName: "Generate SBOM with Billy"
