@@ -4,9 +4,6 @@ variables:
   versionEnv: $(Build.BuildId)
 
 jobs:
-# -----------------------------
-# Job 1: Aqua Trivy Scanning
-# -----------------------------
 - job: AquaScan
   displayName: "Aqua Vulnerability Scan"
   container:
@@ -28,13 +25,13 @@ jobs:
         --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
       displayName: "Run Aqua Scanner"
 
-# -----------------------------
-# Job 2: SBOM Generation
-# -----------------------------
 - job: SBOMGen
   displayName: "SBOM Generation with Billy"
   pool:
-    vmImage: 'ubuntu-latest'  # Ensures full GNU coreutils
+    vmImage: 'ubuntu-latest'
+
+  variables:
+    versionEnv: $(Build.BuildId)  # ensures local to this job too
 
   steps:
     - checkout: self
@@ -57,5 +54,5 @@ jobs:
           --aqua-key $(AQUA_KEY) \
           --aqua-secret $(AQUA_SECRET) \
           --cspm-url https://eu-1.api.cloudsploit.com \
-          --artifact-path my-image-name:${versionEnv}
+          --artifact-path "knightfortheright:$(versionEnv)"
       displayName: "Install & Run Billy"
