@@ -1,42 +1,110 @@
-trigger: none
+trigger:
+  branches:
+    include:
+      - '*'
 
-container:
-  image: aquasec/aqua-scanner
-  env:
-    AQUA_KEY: $(AQUA_KEY)
-    AQUA_SECRET: $(AQUA_SECRET)
-    AZURE_TOKEN: $(AZURE_TOKEN)
-    AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
-    CSPM_URL: https://eu-1.api.cloudsploit.com
-    TRIVY_RUN_AS_PLUGIN: aqua
+pr:
+  branches:
+    include:
+      - '*'
 
-steps:
-# 1. Checkout your code
-- checkout: self
-  fetchDepth: 0
+stages:
+- stage: Scan
+  displayName: Code Scan
+  jobs:
+  - job: ScanJob
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: self
 
-# 2. Run Aqua filesystem scan
-- script: |
-    echo "Running Aqua scanner on source code..."
-    trivy fs --scanners misconfig,vuln,secret .
-  displayName: "Aqua Scanner - Source Code"
+    - task: Docker@2
+      displayName: Run Aqua Scanner
+      inputs:
+        containerRegistry: ''
+        command: 'run'
+        imageName: 'aquasec/aqua-scanner'
+        options: >
+          --env AQUA_KEY=$(AQUA_KEY)
+          --env AQUA_SECRET=$(AQUA_SECRET)
+          --env GITHUB_TOKEN=$(TOKEN)
+          --env TRIVY_RUN_AS_PLUGIN=aqua
+          --env TRIVY_USERNAME=$(TRIVY_USERNAME)
+          --env TRIVY_PASSWORD=$(TRIVY_PASSWORD)
+        arguments: >
+          trivy fs --debug --sast --reachability --package-json
+          --scanners misconfig,vuln,secret
+          --db-repository=registry.aquasec.com/trivy-db:2
+          --checks-bundle-repository=registry.aquasec.com/trivy-checks:1
+          --java-db-repository=registry.aquasec.com/trivy-java-db:1
+          
+- stage: Test
+  displayName: Build and Test
+  dependsOn: Scan
+  jobs:
+  - job: TestJob
+    pool:
+      vmImage: 'ubuntu-20.04'
+    steps:
+    - checkout: self
 
-# 3. Install and run Billy for SBOM generation (filesystem mode)
-- script: |
-    echo "Installing Billy for SBOM generation..."
-    curl -sLo install.sh https://download.codesec.aquasec.com/billy/install.sh
-    curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
+    - task: UsePythonVersion@0
+      inputs:
+        versionSpec: '3.6'
 
-    sha256sum -c install.sh.checksum || { echo "Checksum validation failed"; exit 1; }
+    - script: pip install -r requirements.txt
+      displayName: Install dependencies
 
-    BINDIR="." sh install.sh
-    rm install.sh install.sh.checksum
+    - script: nohup python3 ./app.py &
+      displayName: Run DVGA
 
-    echo "Generating SBOM from source folder..."
-    ./billy generate \
-      --access-token $(System.AccessToken) \
-      --aqua-key $(AQUA_KEY) \
-      --aqua-secret $(AQUA_SECRET) \
-      --cspm-url https://eu-1.api.cloudsploit.com \
-      --artifact-path .
-  displayName: "Generate SBOM with Billy (Source Code)"
+    - script: sleep 5
+      displayName: Wait for server
+
+    - script: python3 -m pytest tests/*
+      displayName: Run DVGA Tests
+
+- stage: SBOM
+  displayName: Generate SBOM
+  dependsOn: Test
+  jobs:
+  - job: SBOMJob
+    pool:
+      vmImage: 'ubuntu-22.04'
+    steps:
+    - checkout: self
+
+    - script: |
+        docker build -t "$(Build.Repository.Name):$(Build.BuildId)" .
+      displayName: Build Docker Image
+
+    - script: |
+        export BILLY_SERVER=https://billy.codesec.aquasec.com
+        export TRIVY_USERNAME=$(TRIVY_USERNAME)
+        export TRIVY_PASSWORD=$(TRIVY_PASSWORD)
+        export TRIVY_DB_REPOSITORY=registry.aquasec.com/trivy-db:2
+        export TRIVY_JAVA_DB_REPOSITORY=registry.aquasec.com/trivy-java-db:1
+        export TRIVY_CHECKS_BUNDLE_REPOSITORY=registry.aquasec.com/trivy-checks:1
+        export TRIVY_QUIET=true
+
+        curl -sLo install.sh https://download.codesec.aquasec.com/billy/install.sh
+        curl -sLo install.sh.checksum https://github.com/argonsecurity/releases/releases/latest/download/install.sh.checksum
+
+        if ! sha256sum -c install.sh.checksum; then
+          echo "install.sh checksum failed"
+          exit 1
+        fi
+
+        BINDIR="." sh install.sh
+        rm install.sh install.sh.checksum
+
+        ./billy generate \
+          --access-token "$(TOKEN)" \
+          --aqua-key "$(AQUA_KEY)" \
+          --aqua-secret "$(AQUA_SECRET)" \
+          --cspm-url https://api.cloudsploit.com \
+          --artifact-path "$(Build.Repository.Name):$(Build.BuildId)" \
+          --quiet \
+          --log-file billy.log \
+          --sbom-path SBOM
+      displayName: Generate SBOM with Billy
