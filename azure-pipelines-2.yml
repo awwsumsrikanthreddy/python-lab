@@ -21,8 +21,8 @@ stages:
       image: aquasec/aqua-scanner
       env:
         AZURE_TOKEN: $(System.AccessToken)
-        AQUA_KEY: $(AQUA_KEY)
-        AQUA_SECRET: $(AQUA_SECRET)
+        AQUA_KEY: LnD9gzLZMhZYCrr02qhkSX
+        AQUA_SECRET: caWtiNk5F0QyzPG8n9bfhjWASKy5rHLoiEa
         AQUA_URL: https://api.eu-1.supply-chain.cloud.aquasec.com
         CSPM_URL: https://eu-1.api.cloudsploit.com
         TRIVY_RUN_AS_PLUGIN: aqua
